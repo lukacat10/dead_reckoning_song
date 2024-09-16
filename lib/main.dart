@@ -18,16 +18,15 @@ var writeApi = client.getWriteService(WriteOptions().merge(
     flushInterval: 5000,
     gzip: true));
 
-void update_field(
-    String measurement, String field, dynamic val, {Map<String, dynamic>? tags}) {
+void update_field(String measurement, String field, dynamic val,
+    {Map<String, dynamic>? tags}) {
   // Create data in list of point structure
   var data = List<Point>.empty(growable: true);
   //data.add();
-  var point =
-      Point('measurement').addTag('location', 'Prague').addField('field', val);
+  var point = Point('measurement').addField('field', val);
   if (tags != null) {
     for (var v in tags.entries) {
-      point.addTag(v.key, v.value)
+      point.addTag(v.key, v.value);
     }
   }
 
