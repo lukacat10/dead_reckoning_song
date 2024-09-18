@@ -19,12 +19,12 @@ var writeApi = client.getWriteService(WriteOptions().merge(
     flushInterval: 5000,
     gzip: true));
 
-void update_field(String measurement, Map<String, dynamic> fields,
+void update_field(String measurement, Map<String, dynamic> fields, DateTime time,
     {Map<String, dynamic>? tags}) {
   // Create data in list of point structure
   var data = List<Point>.empty(growable: true);
   //data.add();
-  var point = Point('measurement');
+  var point = Point('measurement').time(time);
   for (var v in fields.entries) {
     point.addField(v.key, v.value);
   }
@@ -214,7 +214,7 @@ class _MyHomePageState extends State<MyHomePage> {
             "x": event.x,
             "y": event.y,
             "z": event.z,
-          });
+          }, event.timestamp);
           setState(() {
             _userAccelerometerEvent = event;
             if (_userAccelerometerUpdateTime != null) {
@@ -247,7 +247,7 @@ class _MyHomePageState extends State<MyHomePage> {
             "x": event.x,
             "y": event.y,
             "z": event.z,
-          });
+          }, event.timestamp);
           final now = event.timestamp;
           setState(() {
             _accelerometerEvent = event;
@@ -281,7 +281,7 @@ class _MyHomePageState extends State<MyHomePage> {
             "x": event.x,
             "y": event.y,
             "z": event.z,
-          });
+          }, event.timestamp);
           final now = event.timestamp;
           setState(() {
             _gyroscopeEvent = event;
@@ -316,7 +316,7 @@ class _MyHomePageState extends State<MyHomePage> {
             "x": event.x,
             "y": event.y,
             "z": event.z,
-          });
+          }, event.timestamp);
           setState(() {
             _magnetometerEvent = event;
             if (_magnetometerUpdateTime != null) {
@@ -348,7 +348,7 @@ class _MyHomePageState extends State<MyHomePage> {
           final now = event.timestamp;
           update_field("barometer", {
             "pressure": event.pressure,
-          });
+          }, event.timestamp);
           setState(() {
             _barometerEvent = event;
             if (_barometerUpdateTime != null) {
