@@ -398,7 +398,7 @@ class _MyHomePageState extends State<MyHomePage> {
       "headingAccuracy": position.headingAccuracy,
       "speed": position.speed,
       "speedAccuracy": position.speedAccuracy,
-    });
+    }, position.timestamp);
   }
 
   Future<bool> _handlePermission() async {
@@ -472,7 +472,7 @@ class _MyHomePageState extends State<MyHomePage> {
             "headingAccuracy": position.headingAccuracy,
             "speed": position.speed,
             "speedAccuracy": position.speedAccuracy,
-          }));
+          }, position.timestamp));
       // _positionStreamSubscription?.pause();
     }
 
