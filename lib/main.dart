@@ -18,12 +18,15 @@ var writeApi = client.getWriteService(WriteOptions().merge(
     flushInterval: 5000,
     gzip: true));
 
-void update_field(String measurement, String field, dynamic val,
+void update_field(String measurement, Map<String, dynamic> fields,
     {Map<String, dynamic>? tags}) {
   // Create data in list of point structure
   var data = List<Point>.empty(growable: true);
   //data.add();
-  var point = Point('measurement').addField('field', val);
+  var point = Point('measurement');
+  for (var v in fields.entries) {
+    point.addField(v.key, v.value);
+  }
   if (tags != null) {
     for (var v in tags.entries) {
       point.addTag(v.key, v.value);
@@ -203,9 +206,11 @@ class _MyHomePageState extends State<MyHomePage> {
       userAccelerometerEventStream(samplingPeriod: sensorInterval).listen(
         (UserAccelerometerEvent event) {
           final now = event.timestamp;
-          update_field("user_accelerometer", "x", event.x);
-          update_field("user_accelerometer", "y", event.y);
-          update_field("user_accelerometer", "z", event.z);
+          update_field("user_accelerometer", {
+            "x": event.x,
+            "y": event.y,
+            "z": event.z,
+          });
           setState(() {
             _userAccelerometerEvent = event;
             if (_userAccelerometerUpdateTime != null) {
@@ -234,9 +239,11 @@ class _MyHomePageState extends State<MyHomePage> {
     _streamSubscriptions.add(
       accelerometerEventStream(samplingPeriod: sensorInterval).listen(
         (AccelerometerEvent event) {
-          update_field("accelerometer", "x", event.x);
-          update_field("accelerometer", "y", event.y);
-          update_field("accelerometer", "z", event.z);
+          update_field("accelerometer", {
+            "x": event.x,
+            "y": event.y,
+            "z": event.z,
+          });
           final now = event.timestamp;
           setState(() {
             _accelerometerEvent = event;
@@ -266,9 +273,11 @@ class _MyHomePageState extends State<MyHomePage> {
     _streamSubscriptions.add(
       gyroscopeEventStream(samplingPeriod: sensorInterval).listen(
         (GyroscopeEvent event) {
-          update_field("gyro", "x", event.x);
-          update_field("gyro", "y", event.y);
-          update_field("gyro", "z", event.z);
+          update_field("gyro", {
+            "x": event.x,
+            "y": event.y,
+            "z": event.z,
+          });
           final now = event.timestamp;
           setState(() {
             _gyroscopeEvent = event;
@@ -299,9 +308,11 @@ class _MyHomePageState extends State<MyHomePage> {
       magnetometerEventStream(samplingPeriod: sensorInterval).listen(
         (MagnetometerEvent event) {
           final now = event.timestamp;
-          update_field("magnet", "x", event.x);
-          update_field("magnet", "y", event.y);
-          update_field("magnet", "z", event.z);
+          update_field("magnetometer", {
+            "x": event.x,
+            "y": event.y,
+            "z": event.z,
+          });
           setState(() {
             _magnetometerEvent = event;
             if (_magnetometerUpdateTime != null) {
@@ -331,7 +342,9 @@ class _MyHomePageState extends State<MyHomePage> {
       barometerEventStream(samplingPeriod: sensorInterval).listen(
         (BarometerEvent event) {
           final now = event.timestamp;
-          update_field("baro", "pressure", event.pressure);
+          update_field("barometer", {
+            "pressure": event.pressure,
+          });
           setState(() {
             _barometerEvent = event;
             if (_barometerUpdateTime != null) {
