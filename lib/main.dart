@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:pedometer/pedometer.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:influxdb_client/api.dart';
+import 'package:permission_handler/permission_handler.dart' as PermHandler;
 
 var client = InfluxDBClient(
     url: 'http://localhost:8086',
@@ -18,7 +20,8 @@ var writeApi = client.getWriteService(WriteOptions().merge(
     flushInterval: 5000,
     gzip: true));
 
-void update_field(String measurement, Map<String, dynamic> fields, DateTime time,
+void update_field(
+    String measurement, Map<String, dynamic> fields, DateTime time,
     {Map<String, dynamic>? tags}) {
   // Create data in list of point structure
   var data = List<Point>.empty(growable: true);
@@ -206,11 +209,14 @@ class _MyHomePageState extends State<MyHomePage> {
       userAccelerometerEventStream(samplingPeriod: sensorInterval).listen(
         (UserAccelerometerEvent event) {
           final now = event.timestamp;
-          update_field("user_accelerometer", {
-            "x": event.x,
-            "y": event.y,
-            "z": event.z,
-          }, event.timestamp);
+          update_field(
+              "user_accelerometer",
+              {
+                "x": event.x,
+                "y": event.y,
+                "z": event.z,
+              },
+              event.timestamp);
           setState(() {
             _userAccelerometerEvent = event;
             if (_userAccelerometerUpdateTime != null) {
@@ -239,11 +245,14 @@ class _MyHomePageState extends State<MyHomePage> {
     _streamSubscriptions.add(
       accelerometerEventStream(samplingPeriod: sensorInterval).listen(
         (AccelerometerEvent event) {
-          update_field("accelerometer", {
-            "x": event.x,
-            "y": event.y,
-            "z": event.z,
-          }, event.timestamp);
+          update_field(
+              "accelerometer",
+              {
+                "x": event.x,
+                "y": event.y,
+                "z": event.z,
+              },
+              event.timestamp);
           final now = event.timestamp;
           setState(() {
             _accelerometerEvent = event;
@@ -273,11 +282,14 @@ class _MyHomePageState extends State<MyHomePage> {
     _streamSubscriptions.add(
       gyroscopeEventStream(samplingPeriod: sensorInterval).listen(
         (GyroscopeEvent event) {
-          update_field("gyro", {
-            "x": event.x,
-            "y": event.y,
-            "z": event.z,
-          }, event.timestamp);
+          update_field(
+              "gyro",
+              {
+                "x": event.x,
+                "y": event.y,
+                "z": event.z,
+              },
+              event.timestamp);
           final now = event.timestamp;
           setState(() {
             _gyroscopeEvent = event;
@@ -308,11 +320,14 @@ class _MyHomePageState extends State<MyHomePage> {
       magnetometerEventStream(samplingPeriod: sensorInterval).listen(
         (MagnetometerEvent event) {
           final now = event.timestamp;
-          update_field("magnetometer", {
-            "x": event.x,
-            "y": event.y,
-            "z": event.z,
-          }, event.timestamp);
+          update_field(
+              "magnetometer",
+              {
+                "x": event.x,
+                "y": event.y,
+                "z": event.z,
+              },
+              event.timestamp);
           setState(() {
             _magnetometerEvent = event;
             if (_magnetometerUpdateTime != null) {
@@ -342,9 +357,12 @@ class _MyHomePageState extends State<MyHomePage> {
       barometerEventStream(samplingPeriod: sensorInterval).listen(
         (BarometerEvent event) {
           final now = event.timestamp;
-          update_field("barometer", {
-            "pressure": event.pressure,
-          }, event.timestamp);
+          update_field(
+              "barometer",
+              {
+                "pressure": event.pressure,
+              },
+              event.timestamp);
           setState(() {
             _barometerEvent = event;
             if (_barometerUpdateTime != null) {
@@ -370,5 +388,70 @@ class _MyHomePageState extends State<MyHomePage> {
         cancelOnError: true,
       ),
     );
+  }
+
+  Future<bool> _checkActivityRecognitionPermission() async {
+    bool granted = await PermHandler.Permission.activityRecognition.isGranted;
+
+    if (!granted) {
+      granted = await PermHandler.Permission.activityRecognition.request() ==
+          PermHandler.PermissionStatus.granted;
+    }
+
+    return granted;
+  }
+
+  late Stream<PedestrianStatus> _pedestrianStatusStream;
+  late Stream<StepCount> _stepCountStream;
+
+  void onPedestrianStatusChanged(PedestrianStatus event) {
+    print(event);
+    update_field("pedestrian_status", {"status": event.status}, event.timeStamp,
+        tags: {"error": false});
+    // setState(() {
+    //   _status = event.status;
+    // });
+  }
+
+  void onPedestrianStatusError(error) {
+    print('onPedestrianStatusError: $error');
+    update_field("pedestrian_status", {"status": "$error"}, DateTime.now(),
+        tags: {"error": true});
+    // setState(() {
+    //   _status = 'Pedestrian Status not available';
+    // });
+    // print(_status);
+  }
+
+  void onStepCount(StepCount event) {
+    print(event);
+    update_field("step_count", {"steps": event.steps}, event.timeStamp, tags: {"error": false});
+    // setState(() {
+    //   _steps = event.steps.toString();
+    // });
+  }
+
+  void onStepCountError(error) {
+    print('onStepCountError: $error');
+    update_field("step_count", {"steps": "$error"}, DateTime.now(), tags: {"error": true});
+    // setState(() {
+    //   _steps = 'Step Count not available';
+    // });
+  }
+
+  Future<void> initPlatformState() async {
+    bool granted = await _checkActivityRecognitionPermission();
+    if (!granted) {
+      // tell user, the app will not work
+    }
+
+    _pedestrianStatusStream = Pedometer.pedestrianStatusStream;
+    (await _pedestrianStatusStream.listen(onPedestrianStatusChanged))
+        .onError(onPedestrianStatusError);
+
+    _stepCountStream = Pedometer.stepCountStream;
+    _stepCountStream.listen(onStepCount).onError(onStepCountError);
+
+    if (!mounted) return;
   }
 }
