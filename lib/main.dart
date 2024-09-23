@@ -1,52 +1,55 @@
 import 'dart:async';
 
+import 'package:dead_reckoning_song/upgraders.dart';
 import 'package:flutter/material.dart';
 import 'package:sensors_plus/sensors_plus.dart';
-import 'package:influxdb_client/api.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart' as path;
 
-var client = InfluxDBClient(
-    url: 'http://localhost:8086',
-    token: 'my-token',
-    org: 'my-org',
-    bucket: 'my-bucket',
-    debug: true);
-
-// Create write service
-var writeApi = client.getWriteService(WriteOptions().merge(
-    precision: WritePrecision.s,
-    batchSize: 100,
-    flushInterval: 5000,
-    gzip: true));
-
-void update_field(String measurement, Map<String, dynamic> fields, DateTime time,
-    {Map<String, dynamic>? tags}) {
-  // Create data in list of point structure
-  var data = List<Point>.empty(growable: true);
-  //data.add();
-  var point = Point('measurement').time(time);
-  for (var v in fields.entries) {
-    point.addField(v.key, v.value);
-  }
-  if (tags != null) {
-    for (var v in tags.entries) {
-      point.addTag(v.key, v.value);
-    }
-  }
-
-  data.add(point);
-
-  // Write data to InfluxDB
-  print(
-      '\n\n-------------------------------- Write data -------------------------------\n');
-  writeApi.write(data).then((value) {
-    print('Write completed 1');
-  }).catchError((exception) {
-    print('Handle write error here!');
-    print(exception);
-  });
+String iso8601ToSQLITE(String iso8601) {
+  var withoutZ = iso8601.substring(0, iso8601.length - 1);
+  return withoutZ.split("T").join(" ");
 }
 
-void main() {
+void update_field(String measurement, Map<String, dynamic> fields, String time,
+    {Map<String, dynamic>? tags}) {
+  final combined = {
+    ...{"datetime": time},
+    ...fields,
+    ...?tags,
+  };
+  database.insert(measurement, combined,
+      conflictAlgorithm: ConflictAlgorithm.replace);
+}
+
+late Database database;
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  print("Path: ${path.join(await getDatabasesPath(), 'doggie_database.db')}");
+  database = await openDatabase(
+    // Set the path to the database. Note: Using the `join` function from the
+    // `path` package is best practice to ensure the path is correctly
+    // constructed for each platform.
+    path.join(await getDatabasesPath(), 'doggie_database.db'),
+    onCreate: (db, version) {
+      return create(db, version);
+    },
+    onUpgrade: (db, oldVersion, newVersion) {
+      var currentVersion = oldVersion;
+      while (currentVersion < newVersion) {
+        var upgradeFunction =
+            versionPairToUpgradeFunction[(currentVersion, currentVersion + 1)];
+        if (upgradeFunction == null) {
+          throw UnimplementedError("Function isn't implemented!");
+        }
+        upgradeFunction(db, oldVersion, newVersion);
+        currentVersion += 1;
+      }
+    },
+    version: 1,
+  );
   runApp(const MyApp());
 }
 
@@ -180,6 +183,14 @@ class _MyHomePageState extends State<MyHomePage> {
               '$_counter',
               style: Theme.of(context).textTheme.headlineMedium,
             ),
+            ElevatedButton(
+                onPressed: () async {
+                  Share.shareXFiles([
+                    XFile(path.join(
+                        await getDatabasesPath(), 'doggie_database.db'))
+                  ]);
+                },
+                child: Text('Share file'))
           ],
         ),
       ),
@@ -202,15 +213,22 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
+    subscribe();
+  }
+
+  void subscribe() {
     _streamSubscriptions.add(
       userAccelerometerEventStream(samplingPeriod: sensorInterval).listen(
         (UserAccelerometerEvent event) {
           final now = event.timestamp;
-          update_field("user_accelerometer", {
-            "x": event.x,
-            "y": event.y,
-            "z": event.z,
-          }, event.timestamp);
+          update_field(
+              "user_accelerometer",
+              {
+                "x": event.x,
+                "y": event.y,
+                "z": event.z,
+              },
+              iso8601ToSQLITE(event.timestamp.toIso8601String()));
           setState(() {
             _userAccelerometerEvent = event;
             if (_userAccelerometerUpdateTime != null) {
@@ -239,11 +257,14 @@ class _MyHomePageState extends State<MyHomePage> {
     _streamSubscriptions.add(
       accelerometerEventStream(samplingPeriod: sensorInterval).listen(
         (AccelerometerEvent event) {
-          update_field("accelerometer", {
-            "x": event.x,
-            "y": event.y,
-            "z": event.z,
-          }, event.timestamp);
+          update_field(
+              "accelerometer",
+              {
+                "x": event.x,
+                "y": event.y,
+                "z": event.z,
+              },
+              iso8601ToSQLITE(event.timestamp.toIso8601String()));
           final now = event.timestamp;
           setState(() {
             _accelerometerEvent = event;
@@ -273,11 +294,14 @@ class _MyHomePageState extends State<MyHomePage> {
     _streamSubscriptions.add(
       gyroscopeEventStream(samplingPeriod: sensorInterval).listen(
         (GyroscopeEvent event) {
-          update_field("gyro", {
-            "x": event.x,
-            "y": event.y,
-            "z": event.z,
-          }, event.timestamp);
+          update_field(
+              "gyro",
+              {
+                "x": event.x,
+                "y": event.y,
+                "z": event.z,
+              },
+              iso8601ToSQLITE(event.timestamp.toIso8601String()));
           final now = event.timestamp;
           setState(() {
             _gyroscopeEvent = event;
@@ -308,11 +332,14 @@ class _MyHomePageState extends State<MyHomePage> {
       magnetometerEventStream(samplingPeriod: sensorInterval).listen(
         (MagnetometerEvent event) {
           final now = event.timestamp;
-          update_field("magnetometer", {
-            "x": event.x,
-            "y": event.y,
-            "z": event.z,
-          }, event.timestamp);
+          update_field(
+              "magnetometer",
+              {
+                "x": event.x,
+                "y": event.y,
+                "z": event.z,
+              },
+              iso8601ToSQLITE(event.timestamp.toIso8601String()));
           setState(() {
             _magnetometerEvent = event;
             if (_magnetometerUpdateTime != null) {
@@ -342,9 +369,12 @@ class _MyHomePageState extends State<MyHomePage> {
       barometerEventStream(samplingPeriod: sensorInterval).listen(
         (BarometerEvent event) {
           final now = event.timestamp;
-          update_field("barometer", {
-            "pressure": event.pressure,
-          }, event.timestamp);
+          update_field(
+              "barometer",
+              {
+                "pressure": event.pressure,
+              },
+              iso8601ToSQLITE(event.timestamp.toIso8601String()));
           setState(() {
             _barometerEvent = event;
             if (_barometerUpdateTime != null) {
