@@ -1,7 +1,13 @@
 import 'dart:async';
 
-import 'package:dead_reckoning_song/upgraders.dart';
+import 'package:dead_reckoning_song/base_recorders/recorders_manager.dart';
+import 'package:dead_reckoning_song/geoloc.dart' as geol;
+import 'package:dead_reckoning_song/service.dart' as main_service;
+import 'package:disable_battery_optimization/disable_battery_optimization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:sqflite/sqflite.dart';
@@ -24,32 +30,36 @@ void update_field(String measurement, Map<String, dynamic> fields, String time,
 }
 
 late Database database;
+// late RecordersManager recordersManager;
+
+late FlutterBackgroundService service;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  print("Path: ${path.join(await getDatabasesPath(), 'doggie_database.db')}");
-  database = await openDatabase(
-    // Set the path to the database. Note: Using the `join` function from the
-    // `path` package is best practice to ensure the path is correctly
-    // constructed for each platform.
-    path.join(await getDatabasesPath(), 'doggie_database.db'),
-    onCreate: (db, version) {
-      return create(db, version);
-    },
-    onUpgrade: (db, oldVersion, newVersion) {
-      var currentVersion = oldVersion;
-      while (currentVersion < newVersion) {
-        var upgradeFunction =
-            versionPairToUpgradeFunction[(currentVersion, currentVersion + 1)];
-        if (upgradeFunction == null) {
-          throw UnimplementedError("Function isn't implemented!");
-        }
-        upgradeFunction(db, oldVersion, newVersion);
-        currentVersion += 1;
-      }
-    },
-    version: 1,
-  );
+  // recordersManager = await RecordersManager.create('doggie_database.db');
+  // print("Path: ${path.join(await getDatabasesPath(), 'doggie_database.db')}");
+  // database = await openDatabase(
+  //   // Set the path to the database. Note: Using the `join` function from the
+  //   // `path` package is best practice to ensure the path is correctly
+  //   // constructed for each platform.
+  //   path.join(await getDatabasesPath(), 'doggie_database.db'),
+  //   onCreate: (db, version) {
+  //     return create(db, version);
+  //   },
+  //   onUpgrade: (db, oldVersion, newVersion) {
+  //     var currentVersion = oldVersion;
+  //     while (currentVersion < newVersion) {
+  //       var upgradeFunction =
+  //           versionPairToUpgradeFunction[(currentVersion, currentVersion + 1)];
+  //       if (upgradeFunction == null) {
+  //         throw UnimplementedError("Function isn't implemented!");
+  //       }
+  //       upgradeFunction(db, oldVersion, newVersion);
+  //       currentVersion += 1;
+  //     }
+  //   },
+  //   version: 1,
+  // );
   runApp(const MyApp());
 }
 
@@ -106,6 +116,7 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   static const Duration _ignoreDuration = Duration(milliseconds: 20);
   int _counter = 0;
+  bool record = false;
 
   UserAccelerometerEvent? _userAccelerometerEvent;
   AccelerometerEvent? _accelerometerEvent;
@@ -190,7 +201,46 @@ class _MyHomePageState extends State<MyHomePage> {
                         await getDatabasesPath(), 'doggie_database.db'))
                   ]);
                 },
-                child: Text('Share file'))
+                child: Text('Share file')),
+            ElevatedButton(
+                onPressed: () async {
+                  setState(() {
+                    record = !record;
+                  });
+                },
+                child: Text('${record ? "Stop" : "Start"} recording data')),
+            ElevatedButton(
+              child: const Text("Request permissions"),
+              onPressed: () async {
+                var result = await geol.handlePermission();
+                if (!result) {
+                  return;
+                }
+                var notificationPermissionStatus =
+                    await Permission.notification.request();
+                if (!notificationPermissionStatus.isGranted) {
+                  return;
+                }
+                bool? isBatteryOptimizationDisabled =
+                    await DisableBatteryOptimization
+                        .isBatteryOptimizationDisabled;
+                if (isBatteryOptimizationDisabled != true) {
+                  var batteryOptimizationResult =
+                      await DisableBatteryOptimization
+                          .showDisableBatteryOptimizationSettings();
+                  if (batteryOptimizationResult != true) {
+                    return;
+                  }
+                }
+
+                bool? isManBatteryOptimizationDisabled = await DisableBatteryOptimization.isManufacturerBatteryOptimizationDisabled;
+                if(isManBatteryOptimizationDisabled != true) {
+                  await DisableBatteryOptimization.showDisableManufacturerBatteryOptimizationSettings("Your device has additional battery optimization", "Follow the steps and disable the optimizations to allow smooth functioning of this app");
+                }
+                service = await main_service.initializeService();
+                // service.invoke("approved");
+              },
+            ),
           ],
         ),
       ),
@@ -213,22 +263,21 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
-    subscribe();
+    // _getCurrentPosition().then((_) {
+    //   _toggleListening();
+    // });
+    // subscribe();
   }
 
-  void subscribe() {
+  /*void subscribe() {
     _streamSubscriptions.add(
       userAccelerometerEventStream(samplingPeriod: sensorInterval).listen(
         (UserAccelerometerEvent event) {
           final now = event.timestamp;
-          update_field(
-              "user_accelerometer",
-              {
-                "x": event.x,
-                "y": event.y,
-                "z": event.z,
-              },
-              iso8601ToSQLITE(event.timestamp.toIso8601String()));
+          if (record) {
+            recordersManager.userAccelerometerRecorder
+                .insert(event.timestamp, event.x, event.y, event.z);
+          }
           setState(() {
             _userAccelerometerEvent = event;
             if (_userAccelerometerUpdateTime != null) {
@@ -257,14 +306,10 @@ class _MyHomePageState extends State<MyHomePage> {
     _streamSubscriptions.add(
       accelerometerEventStream(samplingPeriod: sensorInterval).listen(
         (AccelerometerEvent event) {
-          update_field(
-              "accelerometer",
-              {
-                "x": event.x,
-                "y": event.y,
-                "z": event.z,
-              },
-              iso8601ToSQLITE(event.timestamp.toIso8601String()));
+          if (record) {
+            recordersManager.accelerometerRecorder
+                .insert(event.timestamp, event.x, event.y, event.z);
+          }
           final now = event.timestamp;
           setState(() {
             _accelerometerEvent = event;
@@ -294,14 +339,10 @@ class _MyHomePageState extends State<MyHomePage> {
     _streamSubscriptions.add(
       gyroscopeEventStream(samplingPeriod: sensorInterval).listen(
         (GyroscopeEvent event) {
-          update_field(
-              "gyro",
-              {
-                "x": event.x,
-                "y": event.y,
-                "z": event.z,
-              },
-              iso8601ToSQLITE(event.timestamp.toIso8601String()));
+          if (record) {
+            recordersManager.gyroRecorder
+                .insert(event.timestamp, event.x, event.y, event.z);
+          }
           final now = event.timestamp;
           setState(() {
             _gyroscopeEvent = event;
@@ -332,14 +373,10 @@ class _MyHomePageState extends State<MyHomePage> {
       magnetometerEventStream(samplingPeriod: sensorInterval).listen(
         (MagnetometerEvent event) {
           final now = event.timestamp;
-          update_field(
-              "magnetometer",
-              {
-                "x": event.x,
-                "y": event.y,
-                "z": event.z,
-              },
-              iso8601ToSQLITE(event.timestamp.toIso8601String()));
+          if (record) {
+            recordersManager.magnetometerRecorder
+                .insert(event.timestamp, event.x, event.y, event.z);
+          }
           setState(() {
             _magnetometerEvent = event;
             if (_magnetometerUpdateTime != null) {
@@ -369,12 +406,10 @@ class _MyHomePageState extends State<MyHomePage> {
       barometerEventStream(samplingPeriod: sensorInterval).listen(
         (BarometerEvent event) {
           final now = event.timestamp;
-          update_field(
-              "barometer",
-              {
-                "pressure": event.pressure,
-              },
-              iso8601ToSQLITE(event.timestamp.toIso8601String()));
+          if (record) {
+            recordersManager.barometerRecorder
+                .insert(event.timestamp, event.pressure);
+          }
           setState(() {
             _barometerEvent = event;
             if (_barometerUpdateTime != null) {
@@ -400,5 +435,134 @@ class _MyHomePageState extends State<MyHomePage> {
         cancelOnError: true,
       ),
     );
+  }*/
+
+/*  final GeolocatorPlatform _geolocatorPlatform = GeolocatorPlatform.instance;
+  Future<void> _getCurrentPosition() async {
+    final hasPermission = await _handlePermission();
+
+    if (!hasPermission) {
+      return;
+    }
+
+    final position = await _geolocatorPlatform.getCurrentPosition();
+    // _updatePositionList(
+    //   _PositionItemType.position,
+    //   position.toString(),
+    // );
+    if (record) {
+      recordersManager.gpsRecorder.insert(
+        position.timestamp,
+        position.accuracy,
+        position.latitude,
+        position.longitude,
+        position.altitudeAccuracy,
+        position.heading,
+        position.headingAccuracy,
+        position.speed,
+        position.speedAccuracy,
+      );
+    }
   }
+
+  Future<bool> _handlePermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // Test if location services are enabled.
+    serviceEnabled = await _geolocatorPlatform.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      // Location services are not enabled don't continue
+      // accessing the position and request users of the
+      // App to enable the location services.
+      // _updatePositionList(
+      //   _PositionItemType.log,
+      //   _kLocationServicesDisabledMessage,
+      // );
+
+      return false;
+    }
+
+    permission = await _geolocatorPlatform.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await _geolocatorPlatform.requestPermission();
+      if (permission == LocationPermission.denied) {
+        // Permissions are denied, next time you could try
+        // requesting permissions again (this is also where
+        // Android's shouldShowRequestPermissionRationale
+        // returned true. According to Android guidelines
+        // your App should show an explanatory UI now.
+        // _updatePositionList(
+        //   _PositionItemType.log,
+        //   _kPermissionDeniedMessage,
+        // );
+
+        return false;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      // Permissions are denied forever, handle appropriately.
+      // _updatePositionList(
+      //   _PositionItemType.log,
+      //   _kPermissionDeniedForeverMessage,
+      // );
+
+      return false;
+    }
+
+    // When we reach here, permissions are granted and we can
+    // continue accessing the position of the device.
+    // _updatePositionList(
+    //   _PositionItemType.log,
+    //   _kPermissionGrantedMessage,
+    // );
+    return true;
+  }
+
+  StreamSubscription<Position>? _positionStreamSubscription;
+  void _toggleListening() {
+    if (_positionStreamSubscription == null) {
+      final positionStream = _geolocatorPlatform.getPositionStream();
+      _positionStreamSubscription = positionStream.handleError((error) {
+        // _positionStreamSubscription?.cancel();
+        // _positionStreamSubscription = null;
+      }).listen((position) {
+        if (record) {
+          recordersManager.gpsRecorder.insert(
+            position.timestamp,
+            position.accuracy,
+            position.latitude,
+            position.longitude,
+            position.altitudeAccuracy,
+            position.heading,
+            position.headingAccuracy,
+            position.speed,
+            position.speedAccuracy,
+          );
+        }
+      });
+      // _positionStreamSubscription?.pause();
+    }
+
+    // setState(() {
+    //   if (_positionStreamSubscription == null) {
+    //     return;
+    //   }
+
+    //   String statusDisplayValue;
+    //   if (_positionStreamSubscription!.isPaused) {
+    //     _positionStreamSubscription!.resume();
+    //     statusDisplayValue = 'resumed';
+    //   } else {
+    //     _positionStreamSubscription!.pause();
+    //     statusDisplayValue = 'paused';
+    //   }
+
+    //   _updatePositionList(
+    //     _PositionItemType.log,
+    //     'Listening for position updates $statusDisplayValue',
+    //   );
+    // });
+  }*/
 }
