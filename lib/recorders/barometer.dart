@@ -19,7 +19,7 @@ class BarometerRecorder extends TimeSeriesRecorder {
   }
 
   @override
-  FutureOr<void> onCreate() {
+  Future<void> onCreate() {
     return onCreateWithFields("""pressure REAL""");
   }
 

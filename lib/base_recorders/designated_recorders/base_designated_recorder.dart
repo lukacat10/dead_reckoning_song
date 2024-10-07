@@ -8,10 +8,10 @@ abstract class DesignatedRecorder extends Recorder {
 
   Function(Transaction) transactionInjector(String injectFields);
 
-  FutureOr<void> onCreateWithFields(String injectFields) {
+  Future<void> onCreateWithFields(String injectFields) async {
     var transactionFunction = transactionInjector(injectFields);
-
-    return updater.database.transaction((txn) async {
+    var db = await updater.getDatabase();
+    return db.transaction((txn) async {
       await transactionFunction(txn);
     });
   }

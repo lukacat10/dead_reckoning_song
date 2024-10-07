@@ -18,7 +18,7 @@ class GPSRecorder extends TimeSeriesRecorder {
   }
 
   @override
-  FutureOr<void> onCreate() {
+  Future<void> onCreate() {
     return onCreateWithFields("""accuracy REAL,
 latitude REAL,
 longitude REAL,

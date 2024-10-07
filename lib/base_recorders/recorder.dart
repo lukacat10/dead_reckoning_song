@@ -4,11 +4,22 @@ import 'package:dead_reckoning_song/base_recorders/record_updater.dart';
 
 abstract class Recorder {
   late final RecordUpdater updater;
-  Recorder(this.updater);
+  Recorder(this.updater) {
+    updater.onCreate(
+      (db, version) async {
+        return await onCreate();
+      },
+    );
+    updater.onUpgrade(
+      (db, oldVersion, newVersion) async {
+        return await runUpgraders(oldVersion, newVersion);
+      },
+    );
+  }
 
   String getTableName();
 
-  FutureOr<void> onCreate();
+  Future<void> onCreate();
 
   Map<(int, int), FutureOr<void> Function(int, int)> getUpgraders();
 

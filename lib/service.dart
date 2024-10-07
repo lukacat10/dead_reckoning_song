@@ -2,12 +2,15 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:dead_reckoning_song/base_recorders/record_updater.dart';
 import 'package:dead_reckoning_song/base_recorders/recorders_manager.dart';
 import 'package:dead_reckoning_song/geoloc.dart';
 import 'package:dead_reckoning_song/sensors.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:path/path.dart' as path;
+import 'package:sqflite/sqflite.dart';
 
 void startBackgroundService() {
   final service = FlutterBackgroundService();
@@ -80,6 +83,10 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 late Geoloc geoloc;
 late Sensors sensors;
 
+Future<String> dbpath() async {
+  return path.join(await getDatabasesPath(), 'doggie_database.db');
+}
+
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
@@ -126,13 +133,13 @@ void onStart(ServiceInstance service) async {
   service.on("start").listen((event) {});
 
   RecordersManager recordersManager =
-      await RecordersManager.create('doggie_database.db');
+      RecordersManager(RecordUpdater(await dbpath()));
   geoloc = Geoloc(recordersManager);
   geoloc.record = true;
   // service.on("approved").listen((event) {
-    geoloc.getCurrentPosition().then((_) {
-      geoloc.toggleListening();
-    });
+  geoloc.getCurrentPosition().then((_) {
+    geoloc.toggleListening();
+  });
   // });
 
   sensors = Sensors(recordersManager);
@@ -143,6 +150,8 @@ void onStart(ServiceInstance service) async {
   //   socket.emit("event-name", "your-message");
   //   print("service is successfully running ${DateTime.now().second}");
   // });
+
+  // service.invoke("init_success");
 
   // bring to foreground
   Timer.periodic(const Duration(seconds: 1), (timer) async {

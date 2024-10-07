@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dead_reckoning_song/base_recorders/recorders_manager.dart';
 import 'package:dead_reckoning_song/geoloc.dart' as geol;
@@ -31,8 +32,6 @@ void update_field(String measurement, Map<String, dynamic> fields, String time,
 
 late Database database;
 // late RecordersManager recordersManager;
-
-late FlutterBackgroundService service;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -116,28 +115,12 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   static const Duration _ignoreDuration = Duration(milliseconds: 20);
   int _counter = 0;
-  bool record = false;
-
-  UserAccelerometerEvent? _userAccelerometerEvent;
-  AccelerometerEvent? _accelerometerEvent;
-  GyroscopeEvent? _gyroscopeEvent;
-  MagnetometerEvent? _magnetometerEvent;
-  BarometerEvent? _barometerEvent;
-
-  DateTime? _userAccelerometerUpdateTime;
-  DateTime? _accelerometerUpdateTime;
-  DateTime? _gyroscopeUpdateTime;
-  DateTime? _magnetometerUpdateTime;
-  DateTime? _barometerUpdateTime;
-
-  int? _userAccelerometerLastInterval;
-  int? _accelerometerLastInterval;
-  int? _gyroscopeLastInterval;
-  int? _magnetometerLastInterval;
-  int? _barometerLastInterval;
   final _streamSubscriptions = <StreamSubscription<dynamic>>[];
 
   Duration sensorInterval = SensorInterval.fastestInterval;
+
+  bool serviceStarted = false;
+  FlutterBackgroundService service = FlutterBackgroundService();
 
   void _incrementCounter() {
     setState(() {
@@ -148,6 +131,14 @@ class _MyHomePageState extends State<MyHomePage> {
       // called again, and so nothing would appear to happen.
       _counter++;
     });
+  }
+
+  Future<bool> _dbFileExists() async {
+    return File(await main_service.dbpath()).exists();
+  }
+
+  Future<bool> _dbFileExistsAndServiceNotRunning() async {
+    return !(await service.isRunning()) && await _dbFileExists();
   }
 
   @override
@@ -194,24 +185,63 @@ class _MyHomePageState extends State<MyHomePage> {
               '$_counter',
               style: Theme.of(context).textTheme.headlineMedium,
             ),
+            FutureBuilder(
+              future: _dbFileExists(),
+              builder: (context, snapshot) {
+                bool pressable = snapshot.hasData && snapshot.data == true;
+                return ElevatedButton(
+                    onPressed: !pressable
+                        ? null
+                        : () async {
+                            Share.shareXFiles(
+                                [XFile(await main_service.dbpath())]);
+                          },
+                    child: const Text('Share file'));
+              },
+            ),
+            FutureBuilder(
+              future: _dbFileExistsAndServiceNotRunning(),
+              builder: (context, snapshot) {
+                bool pressable = snapshot.hasData && snapshot.data == true;
+                return ElevatedButton(
+                    onPressed: !pressable
+                        ? null
+                        : () async {
+                            await File(await main_service.dbpath()).delete();
+                            setState(() {}); // Ensures ui is updated
+                          },
+                    child: const Text('Delete file'));
+              },
+            ),
+            // ElevatedButton(
+            //     onPressed: () async {
+            //       setState(() {
+            //         record = !record;
+            //       });
+            //     },
+            //     child: Text('${record ? "Stop" : "Start"} recording data')),
             ElevatedButton(
-                onPressed: () async {
-                  Share.shareXFiles([
-                    XFile(path.join(
-                        await getDatabasesPath(), 'doggie_database.db'))
-                  ]);
+              child: FutureBuilder(
+                future: service.isRunning(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Text("Service status error");
+                  }
+                  String text = "Start";
+                  if (snapshot.data == true) {
+                    text = "Stop";
+                  }
+                  return Text('$text service');
                 },
-                child: Text('Share file')),
-            ElevatedButton(
-                onPressed: () async {
-                  setState(() {
-                    record = !record;
-                  });
-                },
-                child: Text('${record ? "Stop" : "Start"} recording data')),
-            ElevatedButton(
-              child: const Text("Request permissions"),
+              ),
               onPressed: () async {
+                if (await service.isRunning()) {
+                  service.invoke("stop");
+                  Future.delayed(const Duration(seconds: 2), () async {
+                    setState(() {}); // Ensures ui is updated
+                  });
+                  return;
+                }
                 var result = await geol.handlePermission();
                 if (!result) {
                   return;
@@ -233,11 +263,20 @@ class _MyHomePageState extends State<MyHomePage> {
                   }
                 }
 
-                bool? isManBatteryOptimizationDisabled = await DisableBatteryOptimization.isManufacturerBatteryOptimizationDisabled;
-                if(isManBatteryOptimizationDisabled != true) {
-                  await DisableBatteryOptimization.showDisableManufacturerBatteryOptimizationSettings("Your device has additional battery optimization", "Follow the steps and disable the optimizations to allow smooth functioning of this app");
+                bool? isManBatteryOptimizationDisabled =
+                    await DisableBatteryOptimization
+                        .isManufacturerBatteryOptimizationDisabled;
+                if (isManBatteryOptimizationDisabled != true) {
+                  await DisableBatteryOptimization
+                      .showDisableManufacturerBatteryOptimizationSettings(
+                          "Your device has additional battery optimization",
+                          "Follow the steps and disable the optimizations to allow smooth functioning of this app");
                 }
                 service = await main_service.initializeService();
+                Future.delayed(Duration(seconds: 3), () async {
+                  setState(() {}); // Ensures ui is updated
+                });
+
                 // service.invoke("approved");
               },
             ),
@@ -263,6 +302,9 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
+    // service.on("init_success").listen((_) {
+    //   setState(() {});
+    // });
     // _getCurrentPosition().then((_) {
     //   _toggleListening();
     // });

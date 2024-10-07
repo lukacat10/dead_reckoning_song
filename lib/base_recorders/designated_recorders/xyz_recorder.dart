@@ -5,7 +5,7 @@ abstract class XYZRecorder extends TimeSeriesRecorder {
   XYZRecorder(super.updater);
 
   @override
-  FutureOr<void> onCreate() {
+  Future<void> onCreate() {
     return onCreateWithFields("""x REAL,
         y REAL,
         z REAL""");
